@@ -1,3 +1,12 @@
+import math
+import random
+
+MCTS_LEVELS = {
+    1: {'iterations': 50,   'max_children': 3,  'c_param': 2.5}, # C = 2.5 ---> Prioritiza exploração
+    2: {'iterations': 500,  'max_children': 14, 'c_param': 0.7}, # C = 0.7 ---> Prioritiza nós vencedores
+    3: {'iterations': 2000, 'max_children': 14, 'c_param': 1.4}, # C = 1.4 ---> Equilibrio
+}
+
 class MCTSNode:
     def __init__(self, state, parent=None, move=None, max_children=None):
         self.state = state
@@ -57,7 +66,6 @@ class MCTSNode:
                 if result == 3 - node.state.current_player:
                     node.wins += 1
             node = node.parent
-
 
 class MCTS:
     def __init__(self, level=3):
