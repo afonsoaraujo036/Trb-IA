@@ -1,8 +1,3 @@
-import math
-import random
-import copy
-import pandas as pd
-
 class MCTSNode:
     def __init__(self, state, parent=None, move=None, max_children=None):
         self.state = state
@@ -14,66 +9,75 @@ class MCTSNode:
         self.max_children = max_children
 
     def is_fully_expanded(self):
-        return len(self.children) >= len(self.state.get_legal_moves())
+        legal = self.state.get_legal_moves()
+        limit = min(len(legal), self.max_children) if self.max_children else len(legal)
+        return len(self.children) >= limit
 
     def best_child(self, c_param=1.4):
-        choices_weights = []
+        best, best_w = None, -float('inf')
         for child in self.children:
-            if child.visits > 0:
-                weight = (child.wins / child.visits) + c_param * math.sqrt(math.log(self.visits) / child.visits)
-            else:
-                weight = float('inf')
-            choices_weights.append(weight)
-        return self.children[choices_weights.index(max(choices_weights))]
+            if child.visits == 0:
+                return child
+            w = (child.wins / child.visits) + c_param * math.sqrt(
+                math.log(self.visits) / child.visits
+            )
+            if w > best_w:
+                best_w = w
+                best = child
+        return best
 
     def expand(self):
-        tried_moves = [child.move for child in self.children]
-        legal_moves = self.state.get_legal_moves()
-        random.shuffle(legal_moves)
-        for move in legal_moves:
-            if move not in tried_moves:
+        tried = {child.move for child in self.children}
+        legal = self.state.get_legal_moves()
+        random.shuffle(legal)
+        for move in legal:
+            if move not in tried:
                 next_state = self.state.clone()
                 next_state.make_move(move)
-                child_node = MCTSNode(next_state, parent=self, move=move, max_children=self.max_children)
-                self.children.append(child_node)
-                if self.max_children and len(self.children) >= self.max_children:
-                    break
-                return child_node
+                child = MCTSNode(next_state, parent=self, move=move,
+                                 max_children=self.max_children)
+                self.children.append(child)
+                return child
         return None
 
     def simulate(self):
-        current_state = self.state.clone()
-        while not current_state.is_terminal():
-            legal_moves = current_state.get_legal_moves()
-            move = random.choice(legal_moves)
-            current_state.make_move(move)
-        return current_state.get_winner()
+        current = self.state.clone()
+        depth = 0
+        while not current.is_terminal() and depth < 60:
+            moves = current.get_legal_moves()
+            current.make_move(random.choice(moves))
+            depth += 1
+        return current.get_winner()
 
     def backpropagate(self, result):
         node = self
         while node is not None:
             node.visits += 1
-            if result == 0:
-                pass
-            elif result == 3 - node.state.get_current_player():
-                node.wins += 1
+            if result is not None and result != 0:
+                if result == 3 - node.state.current_player:
+                    node.wins += 1
             node = node.parent
 
 
 class MCTS:
-    def __init__(self, iterations=1000, max_children=14):
-        self.iterations = iterations
-        self.max_children = max_children
+    def __init__(self, level=3):
+        cfg = MCTS_LEVELS.get(level, MCTS_LEVELS[3])
+        self.iterations   = cfg['iterations']
+        self.max_children = cfg['max_children']
+        self.c_param      = cfg['c_param']
+        self.level        = level
 
-    def search(self, initial_state):
-        root = MCTSNode(initial_state, max_children=self.max_children)
+    def search(self, state):
+        root = MCTSNode(state.clone(), max_children=self.max_children)
         for _ in range(self.iterations):
             node = root
             while not node.state.is_terminal() and node.is_fully_expanded():
-                node = node.best_child()
+                node = node.best_child(self.c_param)
             if not node.state.is_terminal():
-                node = node.expand()
-            if node:
-                result = node.simulate()
-                node.backpropagate(result)
-        return root.best_child(c_param=0).move
+                expanded = node.expand()
+                if expanded:
+                    node = expanded
+            result = node.simulate()
+            node.backpropagate(result)
+        best = root.best_child(c_param=0)
+        return best.move if best else random.choice(state.get_legal_moves())
