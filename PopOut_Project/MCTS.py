@@ -1,8 +1,14 @@
 """
 Monte Carlo Tree Search (MCTS) Implementation for PopOut
 
-Adapted from Connect Four MCTS implementation
-Uses UCT (Upper Confidence Bound for Trees) formula for node selection
+Three variants:
+  - MCTS          : Standard UCT, random rollout, 1 expansion per iteration
+  - MCTSHeuristic : UCT with heuristic rollout (win/block detection)
+  - MCTSTopK      : UCT with Top-K simultaneous expansions per iteration
+
+Utility:
+  - run_games()            : play N games between two MCTS configs, return win rates
+  - search_convergence()   : sample win rate at multiple simulation checkpoints
 """
 
 import math
@@ -12,260 +18,349 @@ import copy
 from PopOut import PopOutState, PLAYER_1, PLAYER_2
 
 
+# ---------------------------------------------------------------------------
+# MCTS Node
+# ---------------------------------------------------------------------------
+
 class MCTSNode:
-    """
-    Node in the MCTS tree for PopOut game
-    """
+    """Node in the MCTS tree for PopOut game."""
 
     def __init__(self, state, parent=None, move=None):
-        """
-        Initialize MCTS node
-
-        Args:
-            state: PopOutState object
-            parent: parent MCTSNode
-            move: move that led to this state (tuple: ('drop', col) or ('pop', col))
-        """
         self.state = state
         self.parent = parent
         self.move = move
         self.children = []
         self.visits = 0
-        self.wins = 0  # Number of wins for the player who made the move that led to this node
+        self.wins = 0
         self.untried_moves = state.get_valid_moves()
 
-    def uct_value(self, exploration_constant=math.sqrt(2)):
-        """
-        Calculate Upper Confidence Bound for Trees (UCT) value
-
-        Args:
-            exploration_constant: C parameter in UCT formula
-
-        Returns:
-            UCT value for node selection
-        """
+    def uct_value(self, c=math.sqrt(2)):
         if self.visits == 0:
             return float('inf')
+        return (self.wins / self.visits) + c * math.sqrt(math.log(self.parent.visits) / self.visits)
 
-        exploitation = self.wins / self.visits
-        exploration = exploration_constant * math.sqrt(math.log(self.parent.visits) / self.visits)
-
-        return exploitation + exploration
-
-    def select_child(self, exploration_constant=math.sqrt(2)):
-        """
-        Select the child with highest UCT value
-
-        Returns:
-            Best child node according to UCT
-        """
-        if not self.children:
-            return None
-
-        return max(self.children, key=lambda child: child.uct_value(exploration_constant))
+    def select_child(self, c=math.sqrt(2)):
+        return max(self.children, key=lambda ch: ch.uct_value(c))
 
     def expand(self):
-        """
-        Expand node by creating one new child
-
-        Returns:
-            New child node, or None if no moves available
-        """
+        """Expand one random untried child. Returns new child node."""
         if not self.untried_moves:
             return None
-
-        # Select random untried move
         move = random.choice(self.untried_moves)
         self.untried_moves.remove(move)
-
-        # Create new state after the move
-        new_state = self.state.make_move(move)
-
-        # Create child node
-        child = MCTSNode(new_state, parent=self, move=move)
+        child = MCTSNode(self.state.make_move(move), parent=self, move=move)
         self.children.append(child)
-
         return child
 
-    def simulate(self, max_depth=50):
+    def expand_k(self, k):
+        """Expand up to k untried children. Returns list of new children."""
+        new_children = []
+        for _ in range(min(k, len(self.untried_moves))):
+            move = random.choice(self.untried_moves)
+            self.untried_moves.remove(move)
+            child = MCTSNode(self.state.make_move(move), parent=self, move=move)
+            self.children.append(child)
+            new_children.append(child)
+        return new_children
+
+    def simulate_random(self, max_depth=50):
+        """Random rollout from current node state."""
+        state = copy.deepcopy(self.state)
+        player_at_node = self.state.get_current_player()
+        for _ in range(max_depth):
+            if state.is_game_over():
+                break
+            moves = state.get_valid_moves()
+            if not moves:
+                break
+            state = state.make_move(random.choice(moves))
+        return self._result(state, player_at_node)
+
+    def simulate_heuristic(self, max_depth=50):
         """
-        Run random simulation from current node
-
-        Args:
-            max_depth: Maximum simulation depth
-
-        Returns:
-            1.0 if current player wins, 0.0 if opponent wins, 0.5 for draw
+        Heuristic rollout: prefer immediate winning moves, then blocking moves,
+        otherwise random. This dramatically improves simulation quality.
         """
-        current_state = copy.deepcopy(self.state)
-        depth = 0
+        state = copy.deepcopy(self.state)
+        player_at_node = self.state.get_current_player()
+        for _ in range(max_depth):
+            if state.is_game_over():
+                break
+            moves = state.get_valid_moves()
+            if not moves:
+                break
+            chosen = self._heuristic_pick(state, moves)
+            state = state.make_move(chosen)
+        return self._result(state, player_at_node)
 
-        while not current_state.is_game_over() and depth < max_depth:
-            valid_moves = current_state.get_valid_moves()
+    @staticmethod
+    def _heuristic_pick(state, moves):
+        """Pick winning move > blocking move > random."""
+        current = state.get_current_player()
+        opponent = state.get_opponent()
+        # Check for immediate win
+        for move in moves:
+            ns = state.make_move(move)
+            if ns.get_winner() == current:
+                return move
+        # Check for opponent win to block
+        for move in moves:
+            ns = state.make_move(move)
+            if ns.get_winner() == opponent:
+                return move
+        return random.choice(moves)
 
-            if not valid_moves:
-                # No moves available - this shouldn't happen in normal play
-                return 0.5
-
-            # Choose random move
-            move = random.choice(valid_moves)
-            current_state = current_state.make_move(move)
-            depth += 1
-
-        # Check final result
-        winner = current_state.get_winner()
-        if winner == self.state.get_current_player():
-            return 1.0  # Current player (who made the move) wins
-        elif winner == self.state.get_opponent():
-            return 0.0  # Opponent wins
+    @staticmethod
+    def _result(end_state, player_at_node):
+        winner = end_state.get_winner()
+        if winner == player_at_node:
+            return 1.0
+        elif winner is None:
+            return 0.5
         else:
-            return 0.5  # Draw
+            return 0.0
 
     def backpropagate(self, result):
-        """
-        Backpropagate simulation result up the tree
-
-        Args:
-            result: Simulation result (1.0, 0.0, or 0.5)
-        """
         self.visits += 1
         self.wins += result
-
         if self.parent:
-            # For parent, invert the result (opponent's perspective)
             self.parent.backpropagate(1.0 - result)
 
     def is_fully_expanded(self):
-        """Check if node is fully expanded"""
         return len(self.untried_moves) == 0
 
     def has_children(self):
-        """Check if node has children"""
         return len(self.children) > 0
 
 
+# ---------------------------------------------------------------------------
+# Variant 1 — Standard MCTS (random rollout, 1 expansion per step)
+# ---------------------------------------------------------------------------
+
 class MCTS:
-    """
-    Monte Carlo Tree Search algorithm for PopOut
-    """
+    """Standard UCT MCTS with random rollout."""
 
-    def __init__(self, exploration_constant=math.sqrt(2), max_simulations=1000, max_time=1.0):
-        """
-        Initialize MCTS
+    name = "Standard MCTS"
 
-        Args:
-            exploration_constant: C parameter for UCT
-            max_simulations: Maximum number of simulations per search
-            max_time: Maximum search time in seconds
-        """
-        self.exploration_constant = exploration_constant
+    def __init__(self, exploration_constant=math.sqrt(2), max_simulations=500, max_time=1.0):
+        self.c = exploration_constant
         self.max_simulations = max_simulations
         self.max_time = max_time
 
     def search(self, root_state):
         """
-        Run MCTS search from given state
-
-        Args:
-            root_state: PopOutState to search from
-
-        Returns:
-            tuple: (best_move, win_rate) where win_rate is wins/visits for best move
+        Run MCTS from root_state.
+        Returns (best_move, win_rate).
         """
         root = MCTSNode(root_state)
+        start = time.time()
+        sims = 0
 
-        start_time = time.time()
-        simulations = 0
-
-        while (time.time() - start_time < self.max_time and
-               simulations < self.max_simulations):
-
-            # Selection: traverse tree to leaf node
+        while time.time() - start < self.max_time and sims < self.max_simulations:
             node = root
+            # Selection
             while node.has_children() and node.is_fully_expanded():
-                node = node.select_child(self.exploration_constant)
-
-            # Expansion: add new child if possible
+                node = node.select_child(self.c)
+            # Expansion
             if not node.state.is_game_over() and node.untried_moves:
                 node = node.expand()
-                if not node:
+                if node is None:
                     continue
-
-            # Simulation: random playout
-            result = node.simulate()
-
-            # Backpropagation: update statistics up the tree
+            # Simulation
+            result = node.simulate_random()
+            # Backpropagation
             node.backpropagate(result)
+            sims += 1
 
-            simulations += 1
-
-        # Return best move based on visit count
         if not root.children:
-            # No children - return random valid move
-            valid_moves = root_state.get_valid_moves()
-            return random.choice(valid_moves) if valid_moves else None, 0.0
+            valid = root_state.get_valid_moves()
+            return (random.choice(valid) if valid else None), 0.0
 
-        # Find child with most visits
-        best_child = max(root.children, key=lambda child: child.visits)
-        win_rate = best_child.wins / best_child.visits if best_child.visits > 0 else 0.0
+        best = max(root.children, key=lambda ch: ch.visits)
+        win_rate = best.wins / best.visits if best.visits > 0 else 0.0
+        return best.move, win_rate
 
-        return best_child.move, win_rate
-
-    def get_best_move(self, state, **kwargs):
-        """
-        Convenience method to get best move for a state
-
-        Args:
-            state: PopOutState
-            **kwargs: Override default parameters
-
-        Returns:
-            Best move tuple ('drop', col) or ('pop', col)
-        """
-        # Override parameters if provided
-        exploration_constant = kwargs.get('exploration_constant', self.exploration_constant)
-        max_simulations = kwargs.get('max_simulations', self.max_simulations)
-        max_time = kwargs.get('max_time', self.max_time)
-
-        # Create temporary MCTS with new parameters
-        temp_mcts = MCTS(exploration_constant, max_simulations, max_time)
-        move, win_rate = temp_mcts.search(state)
-
+    def get_best_move(self, state):
+        move, _ = self.search(state)
         return move
 
 
-# Test MCTS implementation
-if __name__ == "__main__":
-    print("Testing MCTS implementation...")
+# ---------------------------------------------------------------------------
+# Variant 2 — Heuristic rollout MCTS
+# ---------------------------------------------------------------------------
 
-    # Create initial state
+class MCTSHeuristic(MCTS):
+    """
+    MCTS with heuristic rollout: prefers immediate wins and blocks over
+    random play. Same tree policy as standard MCTS, better simulation quality.
+    """
+
+    name = "MCTS + Heuristic Rollout"
+
+    def search(self, root_state):
+        root = MCTSNode(root_state)
+        start = time.time()
+        sims = 0
+
+        while time.time() - start < self.max_time and sims < self.max_simulations:
+            node = root
+            while node.has_children() and node.is_fully_expanded():
+                node = node.select_child(self.c)
+            if not node.state.is_game_over() and node.untried_moves:
+                node = node.expand()
+                if node is None:
+                    continue
+            result = node.simulate_heuristic()   # <-- key difference
+            node.backpropagate(result)
+            sims += 1
+
+        if not root.children:
+            valid = root_state.get_valid_moves()
+            return (random.choice(valid) if valid else None), 0.0
+
+        best = max(root.children, key=lambda ch: ch.visits)
+        win_rate = best.wins / best.visits if best.visits > 0 else 0.0
+        return best.move, win_rate
+
+
+# ---------------------------------------------------------------------------
+# Variant 3 — Top-K MCTS (expand K children per iteration)
+# ---------------------------------------------------------------------------
+
+class MCTSTopK(MCTS):
+    """
+    MCTS variant that expands K children simultaneously per iteration.
+    Higher K explores more breadth at the cost of depth.
+    K=1 is equivalent to standard MCTS.
+    """
+
+    name = "MCTS Top-K"
+
+    def __init__(self, k=3, exploration_constant=math.sqrt(2), max_simulations=500, max_time=1.0):
+        super().__init__(exploration_constant, max_simulations, max_time)
+        self.k = k
+        self.name = f"MCTS Top-{k}"
+
+    def search(self, root_state):
+        root = MCTSNode(root_state)
+        start = time.time()
+        sims = 0
+
+        while time.time() - start < self.max_time and sims < self.max_simulations:
+            node = root
+            while node.has_children() and node.is_fully_expanded():
+                node = node.select_child(self.c)
+
+            if not node.state.is_game_over() and node.untried_moves:
+                new_children = node.expand_k(self.k)
+                for child in new_children:
+                    result = child.simulate_random()
+                    child.backpropagate(result)
+                    sims += 1
+            else:
+                result = node.simulate_random()
+                node.backpropagate(result)
+                sims += 1
+
+        if not root.children:
+            valid = root_state.get_valid_moves()
+            return (random.choice(valid) if valid else None), 0.0
+
+        best = max(root.children, key=lambda ch: ch.visits)
+        win_rate = best.wins / best.visits if best.visits > 0 else 0.0
+        return best.move, win_rate
+
+
+# ---------------------------------------------------------------------------
+# Utility functions for evaluation
+# ---------------------------------------------------------------------------
+
+def run_games(mcts1, mcts2, n_games=20, verbose=False):
+    """
+    Play n_games between mcts1 (Player 1) and mcts2 (Player 2).
+
+    Returns:
+        dict with keys 'p1_wins', 'p2_wins', 'draws', 'p1_win_rate'
+    """
+    p1_wins = p2_wins = draws = 0
+
+    for g in range(n_games):
+        state = PopOutState()
+        agents = {PLAYER_1: mcts1, PLAYER_2: mcts2}
+
+        while not state.is_game_over():
+            agent = agents[state.get_current_player()]
+            move = agent.get_best_move(state)
+            if move is None:
+                break
+            state = state.make_move(move)
+
+        winner = state.get_winner()
+        if winner == PLAYER_1:
+            p1_wins += 1
+        elif winner == PLAYER_2:
+            p2_wins += 1
+        else:
+            draws += 1
+
+        if verbose:
+            print(f"  Game {g+1}/{n_games}: winner={winner}")
+
+    total = p1_wins + p2_wins + draws
+    return {
+        'p1_wins': p1_wins,
+        'p2_wins': p2_wins,
+        'draws': draws,
+        'p1_win_rate': p1_wins / total if total > 0 else 0.0,
+    }
+
+
+def search_convergence(mcts_class, root_state, checkpoints, **kwargs):
+    """
+    Measure win rate of the chosen move as simulations increase.
+
+    Args:
+        mcts_class   : MCTS class to instantiate
+        root_state   : PopOutState to analyse
+        checkpoints  : list of simulation counts, e.g. [50, 100, 200, 500, 1000]
+        **kwargs     : extra args forwarded to mcts_class
+
+    Returns:
+        list of (n_sims, win_rate) tuples
+    """
+    results = []
+    for n in checkpoints:
+        agent = mcts_class(max_simulations=n, max_time=9999, **kwargs)
+        _, wr = agent.search(root_state)
+        results.append((n, wr))
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Quick self-test
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    print("=== MCTS variants self-test ===\n")
     state = PopOutState()
 
-    # Create MCTS instance
-    mcts = MCTS(max_simulations=100, max_time=0.5)
+    for cls, kwargs in [
+        (MCTS, {}),
+        (MCTSHeuristic, {}),
+        (MCTSTopK, {'k': 3}),
+    ]:
+        agent = cls(max_simulations=200, max_time=2.0, **kwargs)
+        move, wr = agent.search(state)
+        print(f"{agent.name:30s}  move={move}  win_rate={wr:.3f}")
 
-    # Get best move
-    print("Getting best move for initial state...")
-    best_move, win_rate = mcts.search(state)
+    print("\nConvergence test (Standard MCTS):")
+    pts = search_convergence(MCTS, state, [50, 100, 200, 500])
+    for n, wr in pts:
+        print(f"  sims={n:4d}  win_rate={wr:.3f}")
 
-    print(f"Best move: {best_move}")
-    print(f"Win rate: {win_rate:.3f}")
-
-    # Test with a more developed position
-    print("\nTesting with developed position...")
-
-    # Make some moves to create a more interesting position
-    test_state = state
-    moves = [('drop', 3), ('drop', 3), ('drop', 2), ('drop', 2), ('drop', 1)]
-    for move in moves:
-        if move in test_state.get_valid_moves():
-            test_state = test_state.make_move(move)
-
-    print("Test position:")
-    test_state.display_board()
-
-    best_move2, win_rate2 = mcts.search(test_state)
-    print(f"Best move: {best_move2}")
-    print(f"Win rate: {win_rate2:.3f}")
-
-    print("\nMCTS implementation test completed!")
+    print("\nHead-to-head (10 games, Standard vs Heuristic):")
+    a1 = MCTS(max_simulations=100, max_time=0.3)
+    a2 = MCTSHeuristic(max_simulations=100, max_time=0.3)
+    res = run_games(a1, a2, n_games=10)
+    print(f"  P1 wins={res['p1_wins']}  P2 wins={res['p2_wins']}  Draws={res['draws']}")
+    print(f"  P1 win rate: {res['p1_win_rate']:.2%}")

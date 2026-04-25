@@ -66,9 +66,27 @@ def generate_game_data(mcts_time_limit=0.5, max_games=10):
 
     return game_data
 
+def deduplicate(data):
+    """
+    Remove duplicate rows (same board state + same move).
+    Returns deduplicated list.
+    """
+    seen = set()
+    unique = []
+    for row in data:
+        key = tuple(row)
+        if key not in seen:
+            seen.add(key)
+            unique.append(row)
+    removed = len(data) - len(unique)
+    if removed:
+        print(f"  Deduplication: removed {removed} duplicates ({removed/len(data)*100:.1f}%)")
+    return unique
+
+
 def save_to_csv(data, filename=CSV_FILE):
     """
-    Save generated data to CSV file
+    Save generated data to CSV file (appends to existing).
 
     Args:
         data: List of [board_flat + [move_type, move_col]] lists
@@ -133,8 +151,8 @@ if __name__ == "__main__":
     print("=" * 40)
 
     # Parameters
-    MCTS_TIME = 0.3  # seconds per move
-    N_GAMES = 5      # number of games to generate
+    MCTS_TIME = 0.5  # seconds per move
+    N_GAMES = 50     # number of games to generate
 
     print(f"MCTS time limit: {MCTS_TIME}s per move")
     print(f"Games to generate: {N_GAMES}")
@@ -146,7 +164,11 @@ if __name__ == "__main__":
     generation_time = time.time() - start_time
 
     print(f"Generation time: {generation_time:.2f}s")
-    print(f"Samples generated: {len(game_data)}")
+    print(f"Samples generated (before dedup): {len(game_data)}")
+
+    # Deduplicate
+    game_data = deduplicate(game_data)
+    print(f"Samples after deduplication: {len(game_data)}")
 
     # Save to CSV
     save_to_csv(game_data)
