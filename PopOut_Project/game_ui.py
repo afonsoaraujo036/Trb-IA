@@ -26,23 +26,22 @@ pygame.init()
 SCREEN_W, SCREEN_H = 1280, 720
 
 # ── Board layout  ──────────────────────────────────────────────────────────────
-CELL = 82          # px per board cell
+CELL = 82
 
-BOARD_W = COLS * CELL    # 574
-BOARD_H = ROWS * CELL    # 492
+BOARD_W = COLS * CELL
+BOARD_H = ROWS * CELL
 
-# Vertical: 30 margin-top | 52 drop-zone | 8 gap | 492 board | 8 gap | 52 pop-zone | rest for status
 DROP_ZONE_H = 52
 POP_ZONE_H  = 52
 GAP         = 8
 MARGIN_TOP  = (SCREEN_H - DROP_ZONE_H - GAP - BOARD_H - GAP - POP_ZONE_H - 60) // 2
 
-DROP_TOP  = MARGIN_TOP                           # y-start of drop indicators
-BOARD_TOP = DROP_TOP + DROP_ZONE_H + GAP         # y-start of board
-POP_TOP   = BOARD_TOP + BOARD_H + GAP            # y-start of pop indicators
-STATUS_Y  = POP_TOP + POP_ZONE_H + 8            # y for status text
+DROP_TOP  = MARGIN_TOP
+BOARD_TOP = DROP_TOP + DROP_ZONE_H + GAP
+POP_TOP   = BOARD_TOP + BOARD_H + GAP
+STATUS_Y  = POP_TOP + POP_ZONE_H + 8
 
-BOARD_LEFT = (SCREEN_W - BOARD_W) // 2          # x-start of board (centered)
+BOARD_LEFT = (SCREEN_W - BOARD_W) // 2
 
 # ── Assets ─────────────────────────────────────────────────────────────────────
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -52,27 +51,27 @@ FONT1_PATH = os.path.join(ASSETS_DIR, "font1.otf")
 FONT2_PATH = os.path.join(ASSETS_DIR, "font2.otf")
 
 # ── Colours ────────────────────────────────────────────────────────────────────
-C_BASE   = (239, 222, 198)   # cream
-C_HOVER  = (100,  12,  63)   # dark purple
-C_TEXT   = (251,  90,  72)   # salmon/orange
-C_P1     = (208, 173,  45)   # yellow  – Player 1
-C_P2     = (140,  20,  60)   # deep red/purple – Player 2
-C_BOARD  = ( 25,  70, 155)   # dark blue board background
-C_EMPTY  = (  8,   8,   8)   # near-black empty holes
-C_GREEN  = ( 50, 210,  80)   # valid move indicator
-C_GREY   = ( 70,  70,  70)   # disabled indicator
+C_BASE   = (239, 222, 198)
+C_HOVER  = (100,  12,  63)
+C_TEXT   = (251,  90,  72)
+C_P1     = (208, 173,  45)
+C_P2     = (140,  20,  60)
+C_BOARD  = ( 25,  70, 155)
+C_EMPTY  = (  8,   8,   8)
+C_GREEN  = ( 50, 210,  80)
+C_GREY   = ( 70,  70,  70)
 C_WHITE  = (255, 255, 255)
 C_BLACK  = (  0,   0,   0)
 
 # ── MCTS difficulty presets ────────────────────────────────────────────────────
 DIFFICULTY = {
-    1: {"max_simulations": 200,  "max_time": 0.5},   # Easy
-    2: {"max_simulations": 500,  "max_time": 1.0},   # Medium
-    3: {"max_simulations": 1000, "max_time": 2.0},   # Hard
+    1: {"max_simulations": 200,  "max_time": 0.5},
+    2: {"max_simulations": 500,  "max_time": 1.0},
+    3: {"max_simulations": 1000, "max_time": 2.0},
 }
 DIFFICULTY_LABELS = {1: "Easy", 2: "Medium", 3: "Hard"}
 
-MAX_MOVES_CVC = 250   # safety cap for Computer-vs-Computer games
+MAX_MOVES_CVC = 250
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -129,42 +128,46 @@ class Button:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  Back-to-menu button (usado durante o jogo)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def make_back_btn(img_btn, font):
+    """Cria o botão 'Menu' no canto inferior esquerdo."""
+    return Button(img_btn[2], (100, SCREEN_H - 35), "Quit Game", font,
+                  color_base=C_BASE, color_hover=C_HOVER, size=(160, 44))
+
+
+def draw_back_btn(screen, btn, mouse_pos):
+    btn.draw(screen, mouse_pos)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  Board rendering
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def draw_board(screen, state, hover_col, hover_zone, font_small):
-    """
-    Render the full board including drop/pop indicators.
-
-    hover_col  – column index under the mouse (-1 = none)
-    hover_zone – 'drop' | 'pop' | None
-    """
     board       = state.board
     valid_moves = state.get_valid_moves()
     valid_drops = {col for t, col in valid_moves if t == "drop"}
     valid_pops  = {col for t, col in valid_moves if t == "pop"}
 
-    # ── Board frame ────────────────────────────────────────────────────────────
     frame = pygame.Rect(BOARD_LEFT - 6, BOARD_TOP - 6, BOARD_W + 12, BOARD_H + 12)
     pygame.draw.rect(screen, C_BOARD, frame, border_radius=12)
 
-    # ── Cells ──────────────────────────────────────────────────────────────────
     for row in range(ROWS):
         for col in range(COLS):
             cx = BOARD_LEFT + col * CELL + CELL // 2
             cy = BOARD_TOP  + row * CELL + CELL // 2
             r  = CELL // 2 - 5
 
-            cell = board[row][col]
+            cell  = board[row][col]
             color = C_P1 if cell == PLAYER_1 else (C_P2 if cell == PLAYER_2 else C_EMPTY)
             pygame.draw.circle(screen, color, (cx, cy), r)
 
-            # Green ring on bottom row when pop available for this column
             if row == ROWS - 1 and col in valid_pops and cell != EMPTY:
                 pygame.draw.circle(screen, C_GREEN, (cx, cy), r, 3)
 
-    # ── Drop indicators (above board) ──────────────────────────────────────────
-    ind_r = CELL // 2 - 18   # indicator circle radius
+    ind_r = CELL // 2 - 18
 
     for col in range(COLS):
         cx = BOARD_LEFT + col * CELL + CELL // 2
@@ -177,10 +180,8 @@ def draw_board(screen, state, hover_col, hover_zone, font_small):
             arrow = font_small.render("↓", True, C_BLACK)
             screen.blit(arrow, arrow.get_rect(center=(cx, cy)))
         else:
-            # Column full – show grey outline
             pygame.draw.circle(screen, C_GREY, (cx, cy), ind_r, 2)
 
-    # ── Pop indicators (below board) ───────────────────────────────────────────
     for col in range(COLS):
         cx = BOARD_LEFT + col * CELL + CELL // 2
         cy = POP_TOP + POP_ZONE_H // 2
@@ -191,11 +192,9 @@ def draw_board(screen, state, hover_col, hover_zone, font_small):
             pygame.draw.circle(screen, fill, (cx, cy), ind_r)
             arrow = font_small.render("↑", True, C_BLACK)
             screen.blit(arrow, arrow.get_rect(center=(cx, cy)))
-        # No indicator if pop is not valid for this column
 
 
 def draw_status(screen, state, font_status, extra_msg=None):
-    """Draw current player label and optional extra message."""
     name  = "Yellow (X)" if state.current_player == PLAYER_1 else "Purple (O)"
     color = C_P1          if state.current_player == PLAYER_1 else C_P2
 
@@ -213,11 +212,6 @@ def draw_status(screen, state, font_status, extra_msg=None):
 
 
 def get_col_and_zone(mx, my):
-    """
-    Given mouse coordinates, return (col_index, zone_name).
-    zone_name: 'drop' | 'pop' | 'board' | None
-    col_index: 0-6, or -1 if outside board columns.
-    """
     if mx < BOARD_LEFT or mx >= BOARD_LEFT + BOARD_W:
         return -1, None
     col = (mx - BOARD_LEFT) // CELL
@@ -235,7 +229,6 @@ def get_col_and_zone(mx, my):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def menu_main(screen, bg, img_btn):
-    """Main menu – returns 1/2/3/4 for game mode."""
     f_title = pygame.font.Font(FONT1_PATH, 100)
     f_sel   = pygame.font.Font(FONT2_PATH, 30)
     f_btn   = pygame.font.Font(FONT2_PATH, 23)
@@ -250,7 +243,6 @@ def menu_main(screen, bg, img_btn):
     while True:
         screen.blit(bg, (0, 0))
 
-        # Title: "POP" in cream, "OUT" in text-orange
         t1 = f_title.render("POP", True, C_BASE)
         t2 = f_title.render("OUT", True, C_TEXT)
         tw = t1.get_width() + t2.get_width()
@@ -276,18 +268,14 @@ def menu_main(screen, bg, img_btn):
 
 
 def menu_difficulty(screen, bg, img_btn, player_num):
-    """
-    Difficulty menu for an AI player.
-    Returns 1/2/3 or None if Back was clicked.
-    """
     f_title = pygame.font.Font(FONT2_PATH, 32)
     f_sub   = pygame.font.Font(FONT2_PATH, 22)
     f_btn   = pygame.font.Font(FONT2_PATH, 23)
 
     btns = [
-        Button(img_btn[0], (640, 320), "Easy   (0.5s)",  f_btn),
-        Button(img_btn[1], (640, 390), "Medium (1.0s)",  f_btn),
-        Button(img_btn[2], (640, 460), "Hard   (2.0s)",  f_btn),
+        Button(img_btn[0], (640, 320), "Easy   (0.5s)", f_btn),
+        Button(img_btn[1], (640, 390), "Medium (1.0s)", f_btn),
+        Button(img_btn[2], (640, 460), "Hard   (2.0s)", f_btn),
     ]
     back = Button(img_btn[2], (180, 650), "Back", f_btn, C_HOVER, C_P1, size=(150, 40))
 
@@ -317,17 +305,13 @@ def menu_difficulty(screen, bg, img_btn, player_num):
 
 
 def menu_post_game(screen, bg, img_btn, winner):
-    """
-    Post-game screen.
-    Returns 'again' | 'menu'.
-    """
     f_win = pygame.font.Font(FONT1_PATH, 68)
     f_btn = pygame.font.Font(FONT2_PATH, 23)
 
     if winner == PLAYER_1:
         label, color = "Yellow Wins!", C_P1
     elif winner == PLAYER_2:
-        label, color = "Purple Wins!", C_P2
+        label, color = "Red Wins!", C_P2
     else:
         label, color = "Draw!", C_TEXT
 
@@ -361,17 +345,7 @@ def menu_post_game(screen, bg, img_btn, winner):
 #  Move getters
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def get_human_move(screen, bg, state, font_small, font_status):
-    """
-    Block until the human clicks a valid move indicator.
-
-    Drop: click the ↓ circle ABOVE a column.
-    Pop : click the ↑ circle BELOW a column.
-    
-    Clicking directly on the board cells also works:
-    - upper half of board cell → drop
-    - lower edge zone → treated as pop if valid
-    """
+def get_human_move(screen, bg, state, font_small, font_status, back_btn):
     valid_moves = state.get_valid_moves()
     valid_drops = {col for t, col in valid_moves if t == "drop"}
     valid_pops  = {col for t, col in valid_moves if t == "pop"}
@@ -385,6 +359,7 @@ def get_human_move(screen, bg, state, font_small, font_status):
         screen.blit(bg, (0, 0))
         draw_board(screen, state, hover_col, hover_zone, font_small)
         draw_status(screen, state, font_status, hint)
+        draw_back_btn(screen, back_btn, mp)
         pygame.display.flip()
 
         for ev in pygame.event.get():
@@ -392,31 +367,33 @@ def get_human_move(screen, bg, state, font_small, font_status):
                 pygame.quit(); sys.exit()
 
             if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                # botão de voltar ao menu
+                if back_btn.hit(ev.pos):
+                    return None
+
                 col, zone = get_col_and_zone(*ev.pos)
                 if col == -1:
                     continue
 
-                # Click in drop zone OR on the board itself → attempt drop
                 if zone in ("drop", "board") and col in valid_drops:
                     return ("drop", col)
 
-                # Click in pop zone → attempt pop
                 if zone == "pop" and col in valid_pops:
                     return ("pop", col)
 
 
 def get_computer_move(screen, bg, state, difficulty,
-                      font_small, font_status, font_thinking):
-    """Render 'Thinking…', run MCTS, return best move."""
+                      font_small, font_status, font_thinking, back_btn):
+    mp = pygame.mouse.get_pos()
     screen.blit(bg, (0, 0))
     draw_board(screen, state, -1, None, font_small)
     draw_status(screen, state, font_status)
+    draw_back_btn(screen, back_btn, mp)
 
     think = font_thinking.render("Thinking…", True, C_TEXT)
     screen.blit(think, think.get_rect(center=(SCREEN_W // 2, STATUS_Y + 38)))
     pygame.display.flip()
 
-    # Handle quit events while thinking
     for ev in pygame.event.get(pygame.QUIT):
         pygame.quit(); sys.exit()
 
@@ -434,29 +411,22 @@ def get_computer_move(screen, bg, state, difficulty,
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def game_loop(screen, bg, img_btn, tipo, diff1, diff2):
-    """
-    Run one full game.
-
-    tipo  : 1=HvH | 2=HvC | 3=CvH | 4=CvC
-    diff1 : MCTS difficulty for Player 1 (only used when P1 is computer)
-    diff2 : MCTS difficulty for Player 2 (only used when P2 is computer)
-
-    Returns the winner constant: PLAYER_1 | PLAYER_2 | -1 (draw)
-    """
     tracemalloc.start()
     t_start = time.time()
 
     f_small    = pygame.font.Font(FONT2_PATH, 22)
     f_status   = pygame.font.Font(FONT2_PATH, 26)
     f_thinking = pygame.font.Font(FONT2_PATH, 32)
+    f_back     = pygame.font.Font(FONT2_PATH, 20)
 
-    state     = PopOutState()
+    back_btn = make_back_btn(img_btn, f_back)
+
+    state      = PopOutState()
     move_count = 0
 
     while not state.is_game_over():
         move_count += 1
         if move_count > MAX_MOVES_CVC:
-            # Safety: force draw after too many moves
             break
 
         current  = state.current_player
@@ -466,30 +436,31 @@ def game_loop(screen, bg, img_btn, tipo, diff1, diff2):
             (tipo == 3 and current == PLAYER_2)
         )
 
-        # Flush quit events
         for ev in pygame.event.get(pygame.QUIT):
             pygame.quit(); sys.exit()
 
         if is_human:
-            move = get_human_move(screen, bg, state, f_small, f_status)
+            move = get_human_move(screen, bg, state, f_small, f_status, back_btn)
         else:
             diff = diff1 if current == PLAYER_1 else diff2
             move = get_computer_move(
-                screen, bg, state, diff, f_small, f_status, f_thinking
+                screen, bg, state, diff, f_small, f_status, f_thinking, back_btn
             )
 
+        # jogador clicou em "Menu" → abandona o jogo
         if move is None:
-            break
+            tracemalloc.stop()
+            return None
 
         state = state.make_move(move)
 
-        # Brief board refresh after each move
+        mp = pygame.mouse.get_pos()
         screen.blit(bg, (0, 0))
         draw_board(screen, state, -1, None, f_small)
         draw_status(screen, state, f_status)
+        draw_back_btn(screen, back_btn, mp)
         pygame.display.flip()
 
-        # Small delay for CvC so moves are visible
         if tipo == 4:
             time.sleep(0.4)
 
@@ -537,20 +508,16 @@ def main():
             diff1 = last_diff1
             diff2 = last_diff2
         else:
-            # ── Main menu ──────────────────────────────────────────────────────
             tipo = menu_main(screen, bg, img_btn)
+            diff1 = diff2 = 2
 
-            diff1 = diff2 = 2   # default: Medium
-
-            # ── Difficulty for P1 computer ─────────────────────────────────────
-            if tipo in (3, 4):   # P1 is AI
+            if tipo in (3, 4):
                 d = menu_difficulty(screen, bg, img_btn, 1)
                 if d is None:
                     continue
                 diff1 = d
 
-            # ── Difficulty for P2 computer ─────────────────────────────────────
-            if tipo in (2, 4):   # P2 is AI
+            if tipo in (2, 4):
                 d = menu_difficulty(screen, bg, img_btn, 2)
                 if d is None:
                     continue
@@ -560,8 +527,13 @@ def main():
             last_diff1 = diff1
             last_diff2 = diff2
 
-        # ── Play the game ──────────────────────────────────────────────────────
-        winner   = game_loop(screen, bg, img_btn, tipo, diff1, diff2)
+        winner = game_loop(screen, bg, img_btn, tipo, diff1, diff2)
+
+        # se voltou ao menu sem terminar o jogo
+        if winner is None:
+            replay = False
+            continue
+
         decision = menu_post_game(screen, bg, img_btn, winner)
         replay   = (decision == "again")
 
