@@ -283,38 +283,35 @@ class MCTS:
                 return move
 
         # ---------------------------------------------------------------
-        # Blocking move
+        # Blocking move — only when opponent has an immediate win
         # ---------------------------------------------------------------
 
-        safe_moves = []
+        opponent_has_immediate_win = False
 
-        for move in moves:
+        for om in moves:
 
-            ns = state.make_move(move)
+            test = state.make_move(om)
 
-            opponent_moves = ns.get_valid_moves()
+            if test.get_winner() == opponent:
+                opponent_has_immediate_win = True
+                break
 
-            opponent_can_win = False
+        if opponent_has_immediate_win:
 
-            for om in opponent_moves:
+            for move in moves:
 
-                test = ns.make_move(om)
+                ns = state.make_move(move)
 
-                if test.get_winner() == opponent:
-                    opponent_can_win = True
-                    break
+                opp_can_still_win = False
 
-            if not opponent_can_win:
-                safe_moves.append(move)
+                for om in ns.get_valid_moves():
 
-        if safe_moves:
+                    if ns.make_move(om).get_winner() == opponent:
+                        opp_can_still_win = True
+                        break
 
-            safe_moves = sorted(
-                safe_moves,
-                key=lambda m: abs(m[1] - 3)
-            )
-
-            return safe_moves[0]
+                if not opp_can_still_win:
+                    return move
 
         return None
 
