@@ -9,9 +9,9 @@ Supports:
   ID3 vs MCTS (preset mode)
 
 Controls (Human moves):
-  ↓  – click the green circle above a column  → DROP
-  ↑  – click the green circle below a column  → POP
-  Q  – quit at any time
+  ↓  - click the green circle above a column  → DROP
+  ↑  - click the green circle below a column  → POP
+  Q  - quit at any time
 """
 
 import pygame
@@ -310,8 +310,8 @@ def draw_status_bar(screen, state, move_count: int, rect: pygame.Rect,
     pygame.draw.circle(screen, color, (rect.x + 22, rect.centery), 5)
 
     lbl  = mono(9).render("TURNO ATUAL", True, C_MUTED)
-    name = ui(15).render("Yellow · P1" if state.current_player == PLAYER_1
-                         else "Purple · P2", True, C_TEXT)
+    name = ui(15).render("Red · P1" if state.current_player == PLAYER_1
+                         else "Blue · P2", True, C_TEXT)
     screen.blit(lbl,  (rect.x + 38, rect.centery - 13))
     screen.blit(name, (rect.x + 38, rect.centery + 2))
 
@@ -972,8 +972,8 @@ def game_loop(screen, tipo, diff1, diff2, ai1_type, ai2_type):
     p2_lbl  = make_player_label(tipo, PLAYER_2, ai1_type, ai2_type, diff1, diff2)
 
     print(f"\n── Game stats ──────────────────────────────")
-    print(f"  Yellow (P1)  : {p1_lbl}")
-    print(f"  Purple (P2)  : {p2_lbl}")
+    print(f"  Red (P1)  : {p1_lbl}")
+    print(f"  Blue (P2)  : {p2_lbl}")
     print(f"  Moves played : {move_count}")
     print(f"  Time elapsed : {elapsed:.2f}s")
     print(f"  CPU          : {psutil.cpu_percent():.1f}%")
@@ -1009,15 +1009,15 @@ def main():
                 ai1_type = AI_ID3
                 ai2_type = AI_MCTS
                 diff1    = 2
-                d = menu_difficulty(screen, "Computer (Purple) — MCTS")
+                d = menu_difficulty(screen, "Computer (Blue) — MCTS")
                 if d is None: continue
                 diff2 = d
                 tipo  = 4     # use CvC game logic
 
             else:
-                # ── Player 1 (Yellow) — computer if tipo 3 or 4 ─────────────
+                # ── Player 1 (Red) — computer if tipo 3 or 4 ─────────────
                 if tipo in (3, 4):
-                    lbl = "Computer (Yellow)"
+                    lbl = "Computer (Red)"
                     ai1_type = menu_ai_type(screen, lbl)
                     if ai1_type is None: continue
                     if ai1_type == AI_MCTS:
@@ -1025,9 +1025,9 @@ def main():
                         if d is None: continue
                         diff1 = d
 
-                # ── Player 2 (Purple) — computer if tipo 2 or 4 ─────────────
+                # ── Player 2 (Blue) — computer if tipo 2 or 4 ─────────────
                 if tipo in (2, 4):
-                    lbl = "Computer (Purple)"
+                    lbl = "Computer (Blue)"
                     ai2_type = menu_ai_type(screen, lbl)
                     if ai2_type is None: continue
                     if ai2_type == AI_MCTS:
@@ -1047,7 +1047,7 @@ def main():
 
         decision = menu_post_game(
             screen, winner,
-            p1_lbl or "Yellow", p2_lbl or "Purple",
+            p1_lbl or "Red", p2_lbl or "Blue",
             mc, elapsed
         )
         replay = (decision == "again")
